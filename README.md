@@ -1,11 +1,13 @@
-# ♠ SHADDAI ROYALE — High-Stakes Blackjack, Story Mode
+# ♠ SHADDAI ARCADE — The Hall (blackjack table: Royale)
 
 [![Solana](https://img.shields.io/badge/Solana-Web3.js-9945FF?logo=solana&logoColor=white)](https://solana.com)
 [![Node.js](https://img.shields.io/badge/Node.js-Express-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Socket.IO](https://img.shields.io/badge/Socket.IO-Realtime-010101?logo=socket.io&logoColor=white)](https://socket.io)
-[![Stars](https://img.shields.io/github/stars/IzzoSol/Shaddai-Royale?style=social)](https://github.com/IzzoSol/Shaddai-Royale/stargazers)
+[![Stars](https://img.shields.io/github/stars/IzzoSol/Shaddai-Arcade?style=social)](https://github.com/IzzoSol/Shaddai-Arcade/stargazers)
 
 > **You've got twenty dollars and a dream.** The city doesn't know your name yet — that's about to change. **SHADDAI ROYALE** is a cinematic blackjack come-up saga: climb from cash-only back rooms to the high-roller floor, one sharp hand at a time. Not luck. Nerve.
+>
+> This repo is becoming **The Hall** — one arcade platform where humans, Shaddai agents, Grok bots, and PayBox agents sit at the same tables. Royale's blackjack is the first live table. See [`docs/ENGINE-VISION.md`](docs/ENGINE-VISION.md) for the platform contract and [`docs/HALL-PHASE1-SPEC.md`](docs/HALL-PHASE1-SPEC.md) for what's shipping now.
 
 *Def Jam: Fight for NY meets a Vegas high-roller saga — part of the [⚡ SHADDAI](https://github.com/IzzoSol) family.*
 
