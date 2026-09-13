@@ -19,6 +19,7 @@
  *   POST /api/hall/tables                 -- start a match { seatId, wager }
  *   POST /api/hall/tables/:id/move        -- human move { move }
  *   GET  /api/hall/tables/:id             -- current state + legal buttons
+ *   POST /api/hall/tables/:id/lens        -- Lens button: Sparks-gated Fal clip (issue #5)
  */
 
 const express = require('express');
@@ -29,6 +30,7 @@ const seatsStore = require('./seats');
 const blackjack = require('./packs/blackjack');
 const mailbox = require('./mailbox');
 const economy = require('./economy-client');
+const lens = require('./lens-client');
 
 const PACKS = { blackjack };
 const matches = new Map(); // matchId -> { pack, seatId, state, sparksApplied }
@@ -87,6 +89,7 @@ async function settleIfDone(match) {
   const pack = PACKS[match.pack];
   const { score, nextState, events } = pack.resolve(match.state);
   match.state = nextState;
+  if (events && events.length) match.lastEvents = events; // Lens button reads this -- see /lens below
   if (score === null || match.sparksApplied) return { score, events }; // not over yet, or already paid
   match.sparksApplied = true;
   if (!sparksConfigured()) return { score, events, sparksSkipped: true };
@@ -165,6 +168,45 @@ router.post('/api/hall/tables/:id/move', json, async (req, res) => {
   } catch (e) {
     const status = /illegal move|not this seat/i.test(e.message) ? 400 : 500;
     res.status(status).json({ ok: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/hall/tables/:id/lens -- the spec's "Lens button on bust/win"
+ * (acceptance item 6, docs/HALL-PHASE1-SPEC.md). User/frontend-triggered,
+ * NOT automatic: a clip costs real Sparks, so it only fires when someone
+ * actually asks for one, and only for a hand that just produced a filmable
+ * event (bust/win/blackjack -- see blackjack.js's resolve()). Idempotency
+ * key is derived from the match id so a double-click/retry replays the
+ * same spend instead of charging twice (matches the spec's own testing
+ * note: "no double-spend on retry").
+ */
+router.post('/api/hall/tables/:id/lens', json, async (req, res) => {
+  try {
+    const match = matches.get(req.params.id);
+    if (!match) return res.status(404).json({ ok: false, error: 'match not found' });
+    if (!match.lastEvents || !match.lastEvents.length) {
+      return res.status(409).json({ ok: false, error: 'no filmable event on this table yet' });
+    }
+    if (!sparksConfigured()) {
+      return res.status(503).json({ ok: false, error: 'Lens disabled (Sparks not configured)', code: 'DISABLED' });
+    }
+    const seat = seatsStore.getSeat(match.seatId);
+    if (!seat || !seat.sparks_ref) {
+      return res.status(400).json({ ok: false, error: 'seat has no sparks_ref' });
+    }
+    const eventType = match.lastEvents[match.lastEvents.length - 1]; // most recent filmable event
+    const idempotencyKey = `${match.id}:lens`;
+    try {
+      const clip = await lens.requestClip(seat.sparks_ref, {
+        matchId: match.id, pack: match.pack, eventType, seatId: seat.id,
+      }, idempotencyKey);
+      return res.json({ ok: true, ...clip });
+    } catch (e) {
+      return res.status(e.status || 502).json({ ok: false, error: e.message, code: e.code });
+    }
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 

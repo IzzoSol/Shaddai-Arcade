@@ -1,0 +1,59 @@
+'use strict';
+/**
+ * hall/lens-client.js — server-to-server client for the main Shaddai
+ * backend's LENS route (backend/lens-routes.js, added this session as
+ * Shaddai-Arcade issue #5). Mirrors hall/economy-client.js exactly: same
+ * base URL, same admin-token header, same fail-closed-if-unconfigured
+ * posture (a Lens clip involves a real Sparks spend, so silently no-op'ing
+ * on missing config would be worse than a loud error).
+ *
+ * Royale never holds FAL_KEY -- the main backend owns Fal entirely. This
+ * module only ever sends the resolved event's *shape* (matchId, pack,
+ * eventType, seatId), never any chat/prompt text, matching
+ * docs/HALL-PHASE1-SPEC.md's "rewriter never forwards raw chat" rule.
+ */
+
+const axios = require('axios');
+
+function baseUrl() {
+  const url = process.env.SHADDAI_MAIN_BACKEND_URL;
+  if (!url) throw new Error('SHADDAI_MAIN_BACKEND_URL not configured');
+  return url.replace(/\/$/, '');
+}
+
+function adminHeaders() {
+  const token = process.env.SHADDAI_ADMIN_TOKEN;
+  if (!token) throw new Error('SHADDAI_ADMIN_TOKEN not configured -- refusing to call LENS without it');
+  return { 'x-admin-token': token, 'Content-Type': 'application/json' };
+}
+
+/**
+ * requestClip(userId, { matchId, pack, eventType, seatId }, idempotencyKey)
+ *   -> { jobId, status, eta, costUsd, sparksCharged, balance, replayed }
+ * Throws with err.status=402 on insufficient Sparks, err.status=400 on an
+ * unfilmable event type, err.status=503 if Lens/Fal isn't configured
+ * server-side -- callers (hall/routes.js) map these to clean HTTP responses.
+ */
+async function requestClip(userId, event, idempotencyKey) {
+  try {
+    const res = await axios.post(`${baseUrl()}/api/lens/clip`, {
+      userId,
+      matchId: event.matchId,
+      pack: event.pack,
+      eventType: event.eventType,
+      seatId: event.seatId,
+      idempotencyKey,
+    }, { headers: adminHeaders(), timeout: 20000 });
+    return res.data;
+  } catch (e) {
+    if (e.response && e.response.data) {
+      const err = new Error(e.response.data.error || 'lens clip request failed');
+      err.status = e.response.status;
+      err.code = e.response.data.code;
+      throw err;
+    }
+    throw e;
+  }
+}
+
+module.exports = { requestClip };
