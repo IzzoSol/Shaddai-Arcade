@@ -13,6 +13,12 @@ app.use(express.json({ limit: '2mb' }));
 // serve the game frontend (index.html + any assets) at the root
 app.use(express.static(pathMod.join(__dirname)));
 
+// Shaddai-Arcade "Hall" platform layer (issue #2) -- additive, does not
+// touch any of the existing REST/Socket.IO game routes below. See
+// docs/HALL-PHASE1-SPEC.md and hall/routes.js for what this exposes.
+try { app.use(require('./hall/routes')); console.log('[hall] platform routes mounted'); }
+catch (e) { console.warn('[hall] platform routes failed to mount:', e.message); }
+
 // ── persistence: password saves + leaderboard (JSON files) ──
 // On Render, mount a persistent disk and set DATA_DIR=/var/data so saves +
 // the leaderboard survive redeploys (the default filesystem is ephemeral).
