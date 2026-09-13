@@ -7,12 +7,18 @@
  *
  * SECURITY: SHADDAI_ADMIN_TOKEN is a server-to-server credential and must
  * NEVER reach this repo's browser client -- this module is backend-only.
- * docs/HALL-PHASE1-SPEC.md's own open-question list calls out that the
- * actual cross-service auth shape needs a PIKADON pass (issue #3) before
- * this is used with a real token in production; until then, calling any
- * function here with SHADDAI_ADMIN_TOKEN unset fails closed with a clear
- * error rather than silently no-op'ing (a silent no-op would be worse: a
- * buy-in that "succeeds" without actually debiting anyone).
+ * Calling any function here with it unset fails closed with a clear error
+ * rather than silently no-op'ing (a silent no-op would be worse: a buy-in
+ * that "succeeds" without actually debiting anyone).
+ *
+ * PIKADON pass (issue #3) is DONE as of the main backend's commit 8464785:
+ * economy-routes.js now also accepts a narrower ARCADE_SERVICE_TOKEN
+ * alongside the master ADMIN_TOKEN. Set THIS repo's SHADDAI_ADMIN_TOKEN env
+ * var to that scoped ARCADE_SERVICE_TOKEN value (a Render dashboard action
+ * on both services, not a code change) -- despite the variable's name here,
+ * it should hold the scoped token, NOT the main backend's actual master
+ * ADMIN_TOKEN, so a compromise of this public repo's deploy can't reach
+ * anything outside the Sparks ledger + Lens.
  */
 
 const axios = require('axios');

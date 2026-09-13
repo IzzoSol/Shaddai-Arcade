@@ -11,6 +11,10 @@
  * module only ever sends the resolved event's *shape* (matchId, pack,
  * eventType, seatId), never any chat/prompt text, matching
  * docs/HALL-PHASE1-SPEC.md's "rewriter never forwards raw chat" rule.
+ *
+ * SHADDAI_ADMIN_TOKEN here should hold the scoped ARCADE_SERVICE_TOKEN, not
+ * the main backend's master ADMIN_TOKEN -- see the longer note in
+ * hall/economy-client.js (Shaddai-Arcade issue #3, PIKADON review).
  */
 
 const axios = require('axios');
