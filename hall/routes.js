@@ -85,6 +85,19 @@ async function driveToHumanOrEnd(match) {
   }
 }
 
+// Shaddai-Arcade issue #4 (ZEROX Sparks pricing sanity): docs/HALL-PHASE1-
+// SPEC.md's own economy section calls for "grant(winner.sparks_ref, pot -
+// rake, 'hall:bj_win', idemKey); rake goes to a house account (house:hall)"
+// -- this was spec'd but never implemented (settleIfDone previously paid the
+// full pot with no rake at all). 4% is a starting default, not a final
+// pricing decision -- ZEROX's call whether to keep it, tune it, or drop it
+// in favor of relying on blackjack's own structural house edge (the dealer
+// already wins any hand where the player busts first, before the dealer
+// even draws -- a real edge on its own, separate from this rake). Flooring
+// the rake (never rounding up) means a small pot never rakes to zero payout.
+const RAKE_BPS = 400; // 4.00%, in basis points so the math stays integer-exact
+const HOUSE_ACCOUNT = 'house:hall'; // per HALL-PHASE1-SPEC.md's own naming
+
 async function settleIfDone(match) {
   const pack = PACKS[match.pack];
   const { score, nextState, events } = pack.resolve(match.state);
@@ -99,7 +112,17 @@ async function settleIfDone(match) {
   if (!sparksRef) return { score, events, sparksSkipped: true };
   try {
     if (score === 'win' || score === 'blackjack') {
-      await economy.grant(sparksRef, match.wager * 2, `hall:bj_win:${score}`, `${match.id}:payout`);
+      const pot = match.wager * 2;
+      const rake = Math.floor((pot * RAKE_BPS) / 10000);
+      const payout = pot - rake;
+      await economy.grant(sparksRef, payout, `hall:bj_win:${score}`, `${match.id}:payout`);
+      if (rake > 0) {
+        // Best-effort: a rake-credit failure must never undo or block the
+        // player's own payout above, which has already succeeded.
+        try {
+          await economy.grant(HOUSE_ACCOUNT, rake, 'hall:bj_rake', `${match.id}:rake`);
+        } catch (e) { /* house accounting gap, not a player-facing failure -- swallow */ }
+      }
     } else if (score === 'push') {
       await economy.grant(sparksRef, match.wager, 'hall:bj_push_refund', `${match.id}:refund`);
     }
