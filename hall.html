@@ -2,180 +2,309 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, user-scalable=no">
 <title>The Hall — Shaddai Arcade</title>
 <link rel="stylesheet" href="styles.css">
 <style>
-  /* hall.html — Shaddai-Arcade issue #6 (TURTLE). Owner-approved direction:
-     reuse Royale's existing neon-casino look (styles.css's --navy/--gold/
-     --felt/--cyan vars + Cinzel/Cormorant font stack), no redesign — just
-     the seat/mailbox/Sparks/Lens wiring on top, per docs/HALL-PHASE1-SPEC.md
-     ("Royale's existing neon-casino UI is the visual base... it gets the
-     seat/mailbox + Sparks + Lens wiring, not a redesign"). Mobile-first per
-     owner request: single-column, large touch targets, no hover-only
-     affordances, safe-area padding for notch/home-indicator devices.
-     Copy sourced from docs/HALL-COPY.md (issue #7) — do not freehand new
-     player-facing strings here without updating that doc too. */
-  html, body { overflow: auto; height: auto; min-height: 100%; }
-  body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  /* hall.html — Shaddai-Arcade #6, mobile-first rewrite per owner spec
+     (2026-09-13 follow-up): "walking into the Hall, not a list of games."
+     One room (horizontal swipe strip, not a card grid/hamburger), sticky
+     HUD, sticky bottom rail, bottom sheets for buy-in/add-bot, real
+     spectate via GET /api/hall/tables, inline muted Lens video.
 
-  .hall-topbar {
-    position: sticky; top: 0; z-index: 20;
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 0.75rem; padding: 0.75rem 1rem;
+     HONEST GAPS -- read before extending this file:
+     - The 20s "timeout bar" on a human seat's turn is COSMETIC ONLY. The
+       server (hall/mailbox.js) only enforces a turn timeout for non-human
+       seats; a human seat has no server-side clock today. Do not let
+       anyone treat this bar as authoritative.
+     - Crowd-mode vote counts are NOT implemented anywhere server-side (no
+       vote tracking exists in hall/routes.js). This file deliberately does
+       NOT fabricate vote numbers on the rail buttons -- crowd mode isn't
+       real yet, only solo-vs-house is.
+     - "Spectate" means: poll the real GET /api/hall/tables list and show
+       another live match's spectator-safe summary (playerTotal/
+       dealerUpcard/contenders/pick -- never the deck or a pre-reveal
+       dealer hole card, never a pre-settlement bet winner). It is NOT a
+       live two-seat concurrent hand (that's still solo-vs-house under the
+       hood, same as desktop) -- an onlooker watches one seat's own hand
+       against the house, same shape as the desktop game.
+  */
+  html, body { overflow: hidden; height: 100%; overscroll-behavior: none; }
+  body {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  /* ── HUD ─────────────────────────────────────────────────────────────── */
+  .hud {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    gap: 0.5rem; padding: 0.5rem 0.75rem; min-height: 44px;
     background: linear-gradient(180deg, var(--navy) 0%, rgba(4,13,26,0.92) 100%);
-    border-bottom: 1px solid var(--gold-dim);
+    border-bottom: 1px solid var(--gold-dim); z-index: 30;
   }
-  .hall-brand { font-family: 'Cinzel Decorative', serif; color: var(--gold-bright); font-size: clamp(1.1rem, 4vw, 1.5rem); text-shadow: var(--shadow-gold); }
-  .hall-topbar-right { display: flex; align-items: center; gap: 0.6rem; }
-  .hall-pill {
-    font-family: 'Share Tech Mono', monospace; font-size: 0.85rem;
-    color: var(--cream); background: var(--navy-light);
-    border: 1px solid var(--gold-dim); border-radius: 999px;
-    padding: 0.35rem 0.75rem; white-space: nowrap;
+  .hud-brand { font-family: 'Cinzel Decorative', serif; color: var(--gold-bright); font-size: 1rem; white-space: nowrap; }
+  .hud-right { display: flex; align-items: center; gap: 0.4rem; }
+  .hud-pill {
+    font-family: 'Share Tech Mono', monospace; font-size: 0.8rem; color: var(--cream);
+    background: var(--navy-light); border: 1px solid var(--gold-dim); border-radius: 999px;
+    padding: 0.3rem 0.65rem; white-space: nowrap;
   }
-  .hall-icon-btn {
-    font-size: 1.1rem; min-width: 44px; min-height: 44px;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 999px; border: 1px solid var(--gold-dim); background: var(--navy-light); color: var(--cream);
+  .hud-btn {
+    width: 40px; height: 40px; min-width: 40px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center; font-size: 1.05rem;
+    border: 1px solid var(--gold-dim); background: var(--navy-light); color: var(--cream);
   }
-  .hall-icon-btn:active { background: var(--felt-rim); }
+  .hud-btn:disabled { opacity: 0.35; }
+  .hud-btn:active { background: var(--felt-rim); }
 
-  .hall-main { max-width: 720px; margin: 0 auto; padding: 1rem 1rem 3rem; }
-  .hall-mode-chip {
-    display: inline-flex; align-items: center; gap: 0.4rem;
-    font-family: 'Cinzel', serif; font-size: 0.8rem; color: var(--gold-bright);
-    border: 1px solid var(--gold-dim); border-radius: 999px; padding: 0.25rem 0.7rem; margin-bottom: 0.75rem;
+  /* ── Backdrop (persists behind room + match, dims for match/spectate) ── */
+  .hall-backdrop {
+    position: absolute; inset: 0; z-index: 0;
+    background: radial-gradient(120% 90% at 50% -10%, var(--felt-mid) 0%, var(--navy) 60%);
+    transition: filter 0.25s;
   }
+  body.in-match .hall-backdrop, body.in-spectate .hall-backdrop { filter: brightness(0.55) saturate(0.8); }
 
-  .hall-room-grid { display: grid; grid-template-columns: 1fr; gap: 0.9rem; }
-  @media (min-width: 560px) { .hall-room-grid { grid-template-columns: 1fr 1fr; } }
-
-  .hall-table-card {
-    position: relative; border-radius: 14px; padding: 1rem;
+  /* ── ROOM: swipeable strip of table hotspots (max ~3 visible) ─────────── */
+  #view-room {
+    position: relative; z-index: 1; flex: 1 1 auto; display: flex; flex-direction: column;
+    min-height: 0;
+  }
+  .room-caption {
+    flex: 0 0 auto; padding: 0.6rem 1rem 0.2rem;
+    font-family: 'Cormorant Garamond', serif; color: var(--cream); opacity: 0.85; font-size: 0.95rem;
+  }
+  .room-strip {
+    flex: 1 1 auto; display: flex; gap: 0.7rem; align-items: center;
+    overflow-x: auto; overflow-y: hidden; overscroll-behavior: contain;
+    touch-action: pan-x; -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity; padding: 0.5rem 20vw; /* side padding centers the strip, ~3 cards visible */
+  }
+  .room-strip::-webkit-scrollbar { display: none; }
+  .table-hotspot {
+    scroll-snap-align: center; flex: 0 0 auto; width: 42vw; max-width: 190px; min-width: 140px;
+    border-radius: 16px; padding: 0.9rem 0.8rem;
     background: radial-gradient(120% 140% at 30% 0%, var(--felt-mid) 0%, var(--felt) 70%);
-    border: 1px solid var(--felt-rim); box-shadow: var(--glow-gold); cursor: pointer;
-    min-height: 120px; display: flex; flex-direction: column; justify-content: space-between;
+    border: 1px solid var(--felt-rim); box-shadow: var(--glow-gold);
+    display: flex; flex-direction: column; justify-content: space-between; min-height: 168px;
   }
-  .hall-table-card:active { transform: scale(0.98); }
-  .hall-table-name { font-family: 'Cinzel', serif; color: var(--white); font-size: 1.05rem; }
-  .hall-table-sub { font-family: 'Cormorant Garamond', serif; color: var(--cream); opacity: 0.85; font-size: 0.95rem; margin-top: 0.25rem; }
-  .hall-table-tag { align-self: flex-start; font-family: 'Share Tech Mono', monospace; font-size: 0.7rem; color: var(--cyan); border: 1px solid var(--cyan-dim); border-radius: 6px; padding: 0.15rem 0.45rem; margin-top: 0.6rem; }
+  .table-hotspot.occupied { border-color: var(--gold); }
+  .table-hotspot.active-glow { box-shadow: 0 0 0 2px var(--gold-bright), var(--glow-gold); }
+  .table-name { font-family: 'Cinzel', serif; color: var(--white); font-size: 0.95rem; }
+  .table-tag { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--cyan); margin-top: 0.2rem; }
+  .seat-row { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.6rem; }
+  .seat-chip {
+    width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--navy);
+    background: var(--gold-bright); border: 1px solid var(--gold-dim);
+  }
+  .seat-chip.empty {
+    background: transparent; color: var(--gold-dim); border-style: dashed;
+    animation: chip-pulse 1.8s ease-in-out 1;
+  }
+  @keyframes chip-pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; box-shadow: 0 0 0 6px rgba(201,168,76,0.15); } }
+  .table-cta { font-family: 'Cinzel', serif; font-size: 0.8rem; color: var(--gold-bright); margin-top: 0.5rem; }
+  .table-hotspot-btns { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
+  .table-mini-btn {
+    flex: 1; min-height: 40px; border-radius: 8px; font-family: 'Cinzel', serif; font-size: 0.75rem;
+    background: var(--navy-light); color: var(--cream); border: 1px solid var(--gold-dim);
+  }
+  .table-mini-btn.primary { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); color: var(--navy); border: none; }
+  .table-mini-btn:active { filter: brightness(0.9); }
 
-  .hall-table-view { display: none; }
-  .hall-table-view.active { display: block; }
-  .hall-status-line { font-family: 'Cormorant Garamond', serif; color: var(--cream); font-size: 1.05rem; min-height: 1.6em; margin: 0.75rem 0; }
-  .hall-hand-row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0.5rem 0; }
-  .hall-card { font-family: 'Share Tech Mono', monospace; background: var(--white); color: var(--navy); border-radius: 6px; padding: 0.4rem 0.6rem; font-weight: bold; min-width: 2.2rem; text-align: center; }
+  /* ── MATCH / SPECTATE view ─────────────────────────────────────────────── */
+  .hall-view { position: relative; z-index: 1; flex: 1 1 auto; display: none; flex-direction: column; min-height: 0; padding: 0.75rem 1rem; }
+  .hall-view.active { display: flex; }
+  .back-row { display: flex; align-items: center; justify-content: space-between; }
+  .hall-back { font-family: 'Share Tech Mono', monospace; color: var(--cream); font-size: 0.85rem; background: none; border: none; min-height: 44px; padding: 0 0.25rem; }
+  .spectate-badge { font-family: 'Share Tech Mono', monospace; font-size: 0.7rem; color: var(--cyan); border: 1px solid var(--cyan-dim); border-radius: 6px; padding: 0.15rem 0.5rem; }
 
-  .hall-rail {
-    position: sticky; bottom: 0; z-index: 20;
-    display: flex; gap: 0.6rem; padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+  .turn-line { font-family: 'Cinzel', serif; color: var(--gold-bright); font-size: 0.95rem; margin-top: 0.5rem; }
+  .timeout-track { height: 4px; border-radius: 3px; background: var(--navy-light); margin-top: 0.35rem; overflow: hidden; }
+  .timeout-fill { height: 100%; background: var(--cyan); width: 100%; transform-origin: left; }
+  .timeout-fill.running { animation: timeout-shrink 20s linear forwards; }
+  @keyframes timeout-shrink { to { transform: scaleX(0); } }
+
+  .status-line { font-family: 'Cormorant Garamond', serif; color: var(--white); font-size: 1.15rem; margin: 0.6rem 0; min-height: 1.6em; }
+  .hand-row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.4rem; }
+  .card-chip { font-family: 'Share Tech Mono', monospace; background: var(--white); color: var(--navy); border-radius: 6px; padding: 0.4rem 0.6rem; font-weight: bold; min-width: 2.2rem; text-align: center; }
+
+  .lens-media { margin: 0.5rem 0; border-radius: 12px; overflow: hidden; background: var(--navy-light); min-height: 0; }
+  .lens-media video { width: 100%; display: block; }
+
+  /* ── Bottom rail (always <=3 legal buttons; fixed, thumb-reachable) ────── */
+  .rail {
+    flex: 0 0 auto; display: none; gap: 0.5rem;
+    padding: 0.6rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom));
     background: linear-gradient(0deg, var(--navy) 0%, rgba(4,13,26,0.92) 100%);
-    border-top: 1px solid var(--gold-dim);
+    border-top: 1px solid var(--gold-dim); min-height: 72px; z-index: 30;
   }
-  .hall-rail-btn {
-    flex: 1; min-height: 52px; border-radius: 10px;
-    font-family: 'Cinzel', serif; font-size: 1rem; color: var(--navy);
+  .rail.show { display: flex; }
+  .rail-btn {
+    flex: 1; min-height: 52px; min-width: 44px; border-radius: 10px;
+    font-family: 'Cinzel', serif; font-size: 0.95rem; color: var(--navy);
     background: linear-gradient(180deg, var(--gold-bright) 0%, var(--gold) 100%);
     border: 1px solid var(--gold-dim);
   }
-  .hall-rail-btn:active { filter: brightness(0.92); }
-  .hall-rail-btn.secondary { background: var(--navy-light); color: var(--cream); border-color: var(--gold-dim); }
-  .hall-rail-btn.lens { background: linear-gradient(180deg, var(--cyan) 0%, var(--cyan-dim) 100%); color: var(--navy); }
-  .hall-rail-btn:disabled { opacity: 0.4; }
+  .rail-btn:active { filter: brightness(0.92); }
+  .rail-btn.secondary { background: var(--navy-light); color: var(--cream); border-color: var(--gold-dim); }
+  .rail-btn.lens { background: linear-gradient(180deg, var(--cyan), var(--cyan-dim)); color: var(--navy); }
+  .rail-btn:disabled { opacity: 0.4; }
 
-  .hall-back { font-family: 'Share Tech Mono', monospace; color: var(--cream); font-size: 0.85rem; background: none; border: none; padding: 0.5rem 0; min-height: 44px; }
+  /* ── Sheets (bottom sheet pattern: buy-in confirm, add bot, line, menu) ─ */
+  .sheet-backdrop {
+    position: fixed; inset: 0; background: rgba(2,6,12,0.6); z-index: 40;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .sheet-backdrop.show { opacity: 1; pointer-events: auto; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 41;
+    background: var(--navy-mid); border-top: 1px solid var(--gold-dim);
+    border-radius: 18px 18px 0 0; padding: 1rem 1.1rem calc(1rem + env(safe-area-inset-bottom));
+    transform: translateY(100%); transition: transform 0.22s ease-out;
+    max-height: 70vh; overflow-y: auto;
+  }
+  .sheet.show { transform: translateY(0); }
+  .sheet-grab { width: 40px; height: 4px; border-radius: 2px; background: var(--gold-dim); margin: 0 auto 0.8rem; }
+  .sheet-title { font-family: 'Cinzel', serif; color: var(--gold-bright); font-size: 1.05rem; margin-bottom: 0.5rem; }
+  .sheet-body { font-family: 'Cormorant Garamond', serif; color: var(--cream); font-size: 1.05rem; margin-bottom: 0.9rem; }
+  .sheet-row { display: flex; gap: 0.6rem; }
+  .sheet-btn { flex: 1; min-height: 48px; border-radius: 10px; font-family: 'Cinzel', serif; font-size: 0.95rem; border: 1px solid var(--gold-dim); background: var(--navy-light); color: var(--cream); }
+  .sheet-btn.primary { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); color: var(--navy); border: none; }
+  .sheet-field {
+    width: 100%; min-height: 44px; border-radius: 8px; margin-bottom: 0.6rem;
+    background: var(--navy-light); border: 1px solid var(--gold-dim); color: var(--white);
+    font-family: 'Share Tech Mono', monospace; padding: 0 0.7rem;
+  }
+  .sheet-select { width: 100%; min-height: 44px; border-radius: 8px; margin-bottom: 0.6rem; background: var(--navy-light); border: 1px solid var(--gold-dim); color: var(--white); font-family: 'Share Tech Mono', monospace; padding: 0 0.7rem; }
+  .menu-item { display: block; width: 100%; text-align: left; min-height: 48px; font-family: 'Cinzel', serif; color: var(--cream); background: none; border: none; border-bottom: 1px solid rgba(122,96,48,0.3); }
+  .menu-item:last-child { border-bottom: none; }
 
-  .hall-toast {
-    position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%);
+  .toast {
+    position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
     background: var(--navy-light); border: 1px solid var(--gold); color: var(--cream);
     font-family: 'Cormorant Garamond', serif; font-size: 1rem;
-    padding: 0.6rem 1rem; border-radius: 10px; z-index: 30;
+    padding: 0.6rem 1rem; border-radius: 10px; z-index: 50; max-width: 88vw; text-align: center;
     opacity: 0; pointer-events: none; transition: opacity 0.25s;
   }
-  .hall-toast.show { opacity: 1; }
+  .toast.show { opacity: 1; }
 </style>
 </head>
 <body>
 
-<div class="hall-topbar">
-  <div class="hall-brand">The Hall</div>
-  <div class="hall-topbar-right">
-    <span class="hall-pill" id="sparks-pill">Sparks: —</span>
-    <button class="hall-icon-btn" id="btn-line" title="Line (coach chat)">💬</button>
+<div class="hall-backdrop"></div>
+
+<div class="hud">
+  <div class="hud-brand">The Hall</div>
+  <div class="hud-right">
+    <span class="hud-pill" id="sparks-pill">Sparks —</span>
+    <button class="hud-btn" id="btn-line" title="Line (coach chat)">💬</button>
+    <button class="hud-btn" id="btn-lens-hud" title="Lens" disabled>🎬</button>
+    <button class="hud-btn" id="btn-menu" title="Menu">☰</button>
   </div>
 </div>
 
-<main class="hall-main">
+<!-- ROOM -->
+<section id="view-room">
+  <div class="room-caption">Swipe to look around · tap a table to sit or watch</div>
+  <div class="room-strip" id="room-strip"></div>
+</section>
 
-  <!-- ROOM: table list. Click felt = sit. No "choose a game" menu beyond
-       this list, per HALL-PHASE1-SPEC.md ("the room is the navigation"). -->
-  <section id="view-room">
-    <div class="hall-mode-chip">Versus · house</div>
-    <div class="hall-room-grid" id="room-grid"><!-- filled by JS from /api/hall/seats + fixed pack list --></div>
-  </section>
-
-  <!-- TABLE: one active match at a time (phase-1 solo-vs-house scope). -->
-  <section id="view-table" class="hall-table-view">
+<!-- MATCH (seated) / SPECTATE (watching) -->
+<section id="view-table" class="hall-view">
+  <div class="back-row">
     <button class="hall-back" id="btn-leave-table">‹ Back to the room</button>
-    <h2 class="font-title" id="table-title" style="color:var(--gold-bright)"></h2>
-    <div class="hall-status-line" id="table-status">—</div>
-    <div class="hall-hand-row" id="table-hand"></div>
-  </section>
-</main>
+    <span class="spectate-badge" id="spectate-badge" style="display:none">Spectating</span>
+  </div>
+  <div class="turn-line" id="turn-line"></div>
+  <div class="timeout-track" id="timeout-track" style="display:none"><div class="timeout-fill" id="timeout-fill"></div></div>
+  <div class="status-line" id="table-status">—</div>
+  <div class="hand-row" id="table-hand"></div>
+  <div class="lens-media" id="lens-media" style="display:none"></div>
+</section>
 
-<div class="hall-rail" id="rail" style="display:none">
-  <!-- filled with up to 3 legal buttons, per ENGINE-VISION.md's "always <=3" rule -->
+<div class="rail" id="rail"></div>
+
+<!-- Sheets -->
+<div class="sheet-backdrop" id="sheet-backdrop"></div>
+<div class="sheet" id="sheet-buyin">
+  <div class="sheet-grab"></div>
+  <div class="sheet-title" id="buyin-title">Sit in?</div>
+  <div class="sheet-body" id="buyin-body"></div>
+  <div class="sheet-row">
+    <button class="sheet-btn" id="buyin-cancel">Cancel</button>
+    <button class="sheet-btn primary" id="buyin-confirm">Sit</button>
+  </div>
+</div>
+<div class="sheet" id="sheet-menu">
+  <div class="sheet-grab"></div>
+  <div class="sheet-title">Menu</div>
+  <button class="menu-item" id="menu-add-bot">＋ Add a bot seat</button>
+  <button class="menu-item" id="menu-profile">Profile (coming soon)</button>
+  <button class="menu-item" id="menu-close">Close</button>
+</div>
+<div class="sheet" id="sheet-addbot">
+  <div class="sheet-grab"></div>
+  <div class="sheet-title">Add a bot seat</div>
+  <select class="sheet-select" id="bot-kind">
+    <option value="grok">Grok bot (webhook)</option>
+    <option value="webhook">Generic webhook</option>
+    <option value="shaddai">Shaddai agent</option>
+  </select>
+  <input class="sheet-field" id="bot-name" placeholder="Display name" value="Bot">
+  <input class="sheet-field" id="bot-endpoint" placeholder="https://... (endpoint URL)">
+  <div class="sheet-row">
+    <button class="sheet-btn" id="addbot-cancel">Cancel</button>
+    <button class="sheet-btn primary" id="addbot-confirm">Seat it at Blackjack</button>
+  </div>
+</div>
+<div class="sheet" id="sheet-line">
+  <div class="sheet-grab"></div>
+  <div class="sheet-title">Line</div>
+  <div class="sheet-body">Coach chat is coming soon. Even while coaching, only the 3 move buttons submit a move — chat never plays a hand.</div>
+  <div class="sheet-row"><button class="sheet-btn primary" id="line-close">Close</button></div>
 </div>
 
-<div class="hall-toast" id="toast"></div>
+<div class="toast" id="toast"></div>
 
 <script>
 (function () {
   'use strict';
 
-  // ── Copy (docs/HALL-COPY.md — keep these two files in sync) ──────────────
+  // ── Copy (docs/HALL-COPY.md — keep both files in sync) ───────────────────
   const COPY = {
-    buyinConfirm: (w) => `Sit in for ${w} Sparks?`,
-    buyinInsufficient: (w, bal) => `You need ${w} Sparks to sit in — you've got ${bal}.`,
+    buyinBody: (w) => `Sit for ${w} Sparks?`,
+    buyinInsufficient: (w) => `You need ${w} Sparks to sit in.`,
     buyinToast: (w) => `You're in. ${w} Sparks on the table.`,
     illegalHuman: "That's not one of your options right now. Pick one of the highlighted buttons.",
-    outcome: {
-      win: (p, r) => r > 0 ? `You win ${p} Sparks. (house keeps a ${r}-Spark cut)` : `You win ${p} Sparks.`,
-      blackjack: (p, r) => r > 0 ? `Blackjack! ${p} Sparks. (house keeps a ${r}-Spark cut)` : `Blackjack! ${p} Sparks.`,
-      push: (w) => `Push — your ${w} Sparks are back.`,
-      lose: 'House takes it this time.',
-      bust: 'House takes it this time.',
-    },
+    outcome: { win: 'You win.', blackjack: 'Blackjack! You win.', push: 'Push — your Sparks are back.', lose: 'House takes it this time.', bust: 'House takes it this time.' },
     lensButton: '🎬 Lens this — 15 Sparks',
-    lensConfirm: 'Turn this into a clip for 15 Sparks?',
     lensRolling: 'Rolling the clip... this usually takes under a minute.',
     lensReady: "Clip's ready.",
     lensFail: "Couldn't get the shot this time. Your 15 Sparks are back in your balance.",
-    lensInsufficient: (bal) => `You need 15 Sparks for a Lens clip — you've got ${bal}.`,
+    lensInsufficient: 'You need 15 Sparks for a Lens clip.',
     lensNoEvent: 'Nothing to film right now — Lens only works right after a bust, win, or blackjack.',
     lensDisabled: "Lens isn't running at this table yet. Check back soon.",
+    tableGone: "That table isn't active anymore.",
   };
 
-  // ── Table catalog (mirrors hall/packs/index.js) ──────────────────────────
   const TABLES = [
-    { pack: 'blackjack', name: 'Blackjack', sub: 'Hit, stand, or double against the house.', tag: 'Solo · vs house' },
-    { pack: 'hoops_bet', name: 'Neon Hoops', sub: 'Back NEXUS or PIKADON to win the exhibition.', tag: 'Watch & bet' },
-    { pack: 'gridiron_bet', name: 'Gridiron', sub: 'Back ZEROX or TURTLE to win the exhibition.', tag: 'Watch & bet' },
-    { pack: 'dodgeball_bet', name: 'Dodgeball', sub: 'Back ORACLE or QUILL to win the exhibition.', tag: 'Watch & bet' },
-    { pack: 'starfall_bet', name: 'Starfall', sub: 'Back SHADDAI or NEXUS to win the exhibition.', tag: 'Watch & bet' },
+    { pack: 'blackjack', name: 'Blackjack', tag: 'Solo · vs house' },
+    { pack: 'hoops_bet', name: 'Neon Hoops', tag: 'Watch & bet' },
+    { pack: 'gridiron_bet', name: 'Gridiron', tag: 'Watch & bet' },
+    { pack: 'dodgeball_bet', name: 'Dodgeball', tag: 'Watch & bet' },
+    { pack: 'starfall_bet', name: 'Starfall', tag: 'Watch & bet' },
   ];
   const DEFAULT_WAGER = 25;
 
-  // ── Seat identity: one human seat per browser, remembered locally.
-  //    Real login-linked identity is out of scope for this pass — this is
-  //    the swivel page's own seat, same as HALL-PHASE1-SPEC.md's minimal
-  //    "click felt = sit" flow. ────────────────────────────────────────────
   let seatId = localStorage.getItem('hall_seat_id');
   let matchId = null;
-  let currentPack = null;
+  let spectateId = null;
+  let spectatePoll = null;
+  let roomPoll = null;
+  let lensPollTimer = null;
 
+  // ── generic helpers ───────────────────────────────────────────────────────
   function toast(msg, ms) {
     const el = document.getElementById('toast');
     el.textContent = msg;
@@ -183,17 +312,12 @@
     clearTimeout(toast._t);
     toast._t = setTimeout(() => el.classList.remove('show'), ms || 2600);
   }
-
   async function api(method, path, body) {
-    const res = await fetch(path, {
-      method, headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const res = await fetch(path, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.ok === false) throw Object.assign(new Error(data.error || `${method} ${path} failed`), { status: res.status, data });
     return data;
   }
-
   async function ensureSeat() {
     if (seatId) return seatId;
     const { seat } = await api('POST', '/api/hall/seats', { kind: 'human', display_name: 'You' });
@@ -201,142 +325,255 @@
     localStorage.setItem('hall_seat_id', seatId);
     return seatId;
   }
+  function openSheet(id) { document.getElementById('sheet-backdrop').classList.add('show'); document.getElementById(id).classList.add('show'); }
+  function closeSheets() {
+    document.getElementById('sheet-backdrop').classList.remove('show');
+    document.querySelectorAll('.sheet').forEach((s) => s.classList.remove('show'));
+  }
+  document.getElementById('sheet-backdrop').addEventListener('click', closeSheets);
 
-  function renderRoom() {
-    const grid = document.getElementById('room-grid');
-    grid.innerHTML = '';
+  // ── ROOM ────────────────────────────────────────────────────────────────
+  function renderRoom(rows) {
+    const strip = document.getElementById('room-strip');
+    strip.innerHTML = '';
     for (const t of TABLES) {
+      // "live" here includes a brief post-settle grace window (see
+      // hall/routes.js's SETTLED_GRACE_MS) -- a non-human seat's hand
+      // resolves synchronously, so this room can never show one *mid*-
+      // decision, only just-seated or just-finished. Tag reflects which.
+      const row = rows.find((r) => r.pack === t.pack);
+      const justFinished = row && row.phase === 'settled';
       const card = document.createElement('div');
-      card.className = 'hall-table-card';
+      card.className = 'table-hotspot' + (row ? ' occupied' : '');
+      const chip = row
+        ? `<div class="seat-chip" title="${row.seatName || ''}">${(row.seatKind || '?')[0].toUpperCase()}</div>`
+        : `<div class="seat-chip empty"></div>`;
+      const tag = row ? (justFinished ? `${t.tag} · just finished` : `${t.tag} · in progress`) : t.tag;
       card.innerHTML = `
         <div>
-          <div class="hall-table-name font-title">${t.name}</div>
-          <div class="hall-table-sub">${t.sub}</div>
+          <div class="table-name font-title">${t.name}</div>
+          <div class="table-tag">${tag}</div>
+          <div class="seat-row">${chip}</div>
         </div>
-        <div class="hall-table-tag">${t.tag}</div>`;
-      card.addEventListener('click', () => sitAt(t));
-      grid.appendChild(card);
+        <div class="table-hotspot-btns">
+          ${row ? `<button class="table-mini-btn" data-act="watch">${justFinished ? 'Recap' : 'Watch'}</button>` : ''}
+          <button class="table-mini-btn primary" data-act="sit">${row ? 'Sit elsewhere' : 'Sit'}</button>
+        </div>`;
+      card.querySelector('[data-act="sit"]').addEventListener('click', () => confirmSit(t));
+      const watchBtn = card.querySelector('[data-act="watch"]');
+      if (watchBtn) watchBtn.addEventListener('click', () => enterSpectate(row.matchId));
+      strip.appendChild(card);
     }
   }
+  async function refreshRoom() {
+    try {
+      const { tables } = await api('GET', '/api/hall/tables');
+      renderRoom(tables);
+    } catch (e) { /* room listing is best-effort; a transient failure just skips this refresh */ }
+  }
 
-  async function sitAt(table) {
+  // ── BUY-IN SHEET → SIT ─────────────────────────────────────────────────
+  let pendingTable = null;
+  function confirmSit(table) {
+    pendingTable = table;
+    document.getElementById('buyin-title').textContent = table.name;
+    document.getElementById('buyin-body').textContent = COPY.buyinBody(DEFAULT_WAGER);
+    openSheet('sheet-buyin');
+  }
+  document.getElementById('buyin-cancel').addEventListener('click', closeSheets);
+  document.getElementById('buyin-confirm').addEventListener('click', async () => {
+    closeSheets();
+    if (!pendingTable) return;
     try {
       await ensureSeat();
-      if (!confirm(COPY.buyinConfirm(DEFAULT_WAGER))) return;
-      const res = await api('POST', '/api/hall/tables', { seatId, wager: DEFAULT_WAGER, pack: table.pack });
-      if (res.settlement && res.settlement.sparksError) {
-        toast(COPY.buyinInsufficient(DEFAULT_WAGER, '—'));
-        return;
-      }
+      const res = await api('POST', '/api/hall/tables', { seatId, wager: DEFAULT_WAGER, pack: pendingTable.pack });
+      if (res.settlement && res.settlement.sparksError) { toast(COPY.buyinInsufficient(DEFAULT_WAGER)); return; }
       toast(COPY.buyinToast(DEFAULT_WAGER));
       matchId = res.matchId;
-      currentPack = table;
-      showTable(table, res.state, res.legal, res.settlement);
+      enterMatch(pendingTable, res.state, res.legal, res.settlement);
     } catch (e) {
-      toast(e.message || 'Could not open that table.');
+      toast(e.status === 402 || /insufficient/i.test(e.message || '') ? COPY.buyinInsufficient(DEFAULT_WAGER) : (e.message || 'Could not open that table.'));
     }
-  }
+  });
 
-  function showTable(table, state, legal, settlement) {
+  // ── MATCH (seated) ─────────────────────────────────────────────────────
+  let activeTable = null;
+  function enterMatch(table, state, legal, settlement) {
+    activeTable = table;
+    document.body.classList.add('in-match');
     document.getElementById('view-room').style.display = 'none';
     document.getElementById('view-table').classList.add('active');
-    document.getElementById('table-title').textContent = table.name;
-    renderHand(state);
-    renderStatus(state, settlement);
-    renderRail(legal, settlement);
+    document.getElementById('spectate-badge').style.display = 'none';
+    document.getElementById('lens-media').style.display = 'none';
+    document.getElementById('lens-media').innerHTML = '';
+    renderMatch(state, legal, settlement);
   }
-
-  function renderHand(state) {
-    const row = document.getElementById('table-hand');
-    row.innerHTML = '';
-    // Blackjack-specific hand render; bet packs have no cards to show.
+  function renderMatch(state, legal, settlement) {
+    document.getElementById('table-hand').innerHTML = '';
     if (state && state.player && Array.isArray(state.player.cards)) {
+      const row = document.getElementById('table-hand');
       for (const c of state.player.cards) {
-        const el = document.createElement('span');
-        el.className = 'hall-card';
-        el.textContent = `${c.r}${c.s}`;
-        row.appendChild(el);
+        const el = document.createElement('span'); el.className = 'card-chip'; el.textContent = `${c.r}${c.s}`; row.appendChild(el);
       }
     }
-  }
-
-  function renderStatus(state, settlement) {
-    const el = document.getElementById('table-status');
     const score = settlement && settlement.score;
-    if (!score) { el.textContent = currentPack && currentPack.pack === 'blackjack' ? 'Your move.' : 'Pick a side.'; return; }
-    const payout = settlement.payout; // not returned by the API today — informational copy only when present
-    if (score === 'win' || score === 'blackjack') el.textContent = COPY.outcome[score](payout || '', 0);
-    else if (score === 'push') el.textContent = COPY.outcome.push(currentPack ? DEFAULT_WAGER : '');
-    else el.textContent = COPY.outcome.lose;
+    const turnLine = document.getElementById('turn-line');
+    const timeoutTrack = document.getElementById('timeout-track');
+    const timeoutFill = document.getElementById('timeout-fill');
+    if (!score) {
+      turnLine.textContent = 'Your move';
+      timeoutTrack.style.display = '';
+      timeoutFill.className = 'timeout-fill'; void timeoutFill.offsetWidth; timeoutFill.className = 'timeout-fill running';
+    } else {
+      turnLine.textContent = 'Hand over';
+      timeoutTrack.style.display = 'none';
+    }
+    document.getElementById('table-status').textContent = score ? (COPY.outcome[score] || score) : (state && state.contenders ? `${state.contenders.A} vs ${state.contenders.B}` : 'You 12 · Dealer showing');
+    renderRail(legal, settlement);
   }
-
   function renderRail(legal, settlement) {
     const rail = document.getElementById('rail');
     rail.innerHTML = '';
     const over = settlement && settlement.score;
+    document.getElementById('btn-lens-hud').disabled = !(over && settlement.events && settlement.events.length);
     if (over) {
-      rail.style.display = 'flex';
+      rail.classList.add('show');
       const canLens = settlement.events && settlement.events.length;
       const lensBtn = document.createElement('button');
-      lensBtn.className = 'hall-rail-btn lens';
-      lensBtn.textContent = COPY.lensButton;
-      lensBtn.disabled = !canLens;
-      lensBtn.addEventListener('click', () => requestLens());
+      lensBtn.className = 'rail-btn lens'; lensBtn.textContent = COPY.lensButton; lensBtn.disabled = !canLens;
+      lensBtn.addEventListener('click', requestLens);
       rail.appendChild(lensBtn);
-
       const leaveBtn = document.createElement('button');
-      leaveBtn.className = 'hall-rail-btn secondary';
-      leaveBtn.textContent = 'Back to the room';
+      leaveBtn.className = 'rail-btn secondary'; leaveBtn.textContent = 'Back to the room';
       leaveBtn.addEventListener('click', leaveTable);
       rail.appendChild(leaveBtn);
       return;
     }
-    if (!legal || !legal.length) { rail.style.display = 'none'; return; }
-    rail.style.display = 'flex'; // ENGINE-VISION.md: bottom rail is ALWAYS <=3 legal buttons
+    if (!legal || !legal.length) { rail.classList.remove('show'); return; }
+    rail.classList.add('show'); // ENGINE-VISION.md: bottom rail is ALWAYS <=3 legal buttons, full-width thirds
     for (const b of legal) {
       const btn = document.createElement('button');
-      btn.className = 'hall-rail-btn';
-      btn.textContent = b.label;
+      btn.className = 'rail-btn'; btn.textContent = b.label;
       btn.addEventListener('click', () => submitMove(b.id));
       rail.appendChild(btn);
     }
   }
-
   async function submitMove(moveId) {
     try {
       const res = await api('POST', `/api/hall/tables/${matchId}/move`, { move: moveId });
-      renderHand(res.state);
-      renderStatus(res.state, res.settlement);
-      renderRail(res.legal, res.settlement);
-    } catch (e) {
-      toast(COPY.illegalHuman);
-    }
+      renderMatch(res.state, res.legal, res.settlement);
+    } catch (e) { toast(COPY.illegalHuman); }
   }
 
+  // ── LENS ────────────────────────────────────────────────────────────────
   async function requestLens() {
     toast(COPY.lensRolling, 6000);
     try {
-      await api('POST', `/api/hall/tables/${matchId}/lens`);
-      toast(COPY.lensReady);
+      const clip = await api('POST', `/api/hall/tables/${matchId}/lens`);
+      pollLens(clip.jobId);
     } catch (e) {
-      if (e.status === 402) toast(COPY.lensInsufficient('—'));
+      if (e.status === 402) toast(COPY.lensInsufficient);
       else if (e.status === 409) toast(COPY.lensNoEvent);
       else if (e.status === 503) toast(COPY.lensDisabled);
       else toast(COPY.lensFail);
     }
   }
+  function pollLens(jobId) {
+    clearInterval(lensPollTimer);
+    let tries = 0;
+    lensPollTimer = setInterval(async () => {
+      tries++;
+      if (tries > 40) { clearInterval(lensPollTimer); return; } // ~2min ceiling, stop polling silently
+      try {
+        const s = await api('GET', `/api/hall/tables/${matchId}/lens/${jobId}`);
+        if (s.status === 'error') { clearInterval(lensPollTimer); toast(COPY.lensFail); return; }
+        if (s.videoUrl) {
+          clearInterval(lensPollTimer);
+          toast(COPY.lensReady);
+          const holder = document.getElementById('lens-media');
+          holder.style.display = 'block';
+          // Inline, muted-first playback -- tap for sound. preload=none until we actually have a URL.
+          holder.innerHTML = `<video src="${s.videoUrl}" playsinline muted autoplay loop controls preload="none"></video>`;
+        }
+      } catch (_) { /* keep polling until the tries ceiling */ }
+    }, 3000);
+  }
+  document.getElementById('btn-lens-hud').addEventListener('click', () => { if (!document.getElementById('btn-lens-hud').disabled) requestLens(); });
 
-  function leaveTable() {
-    matchId = null; currentPack = null;
-    document.getElementById('view-table').classList.remove('active');
-    document.getElementById('view-room').style.display = '';
-    document.getElementById('rail').style.display = 'none';
+  // ── SPECTATE (read-only, another live table via the sanitized list) ──────
+  async function enterSpectate(id) {
+    spectateId = id;
+    document.body.classList.add('in-spectate');
+    document.getElementById('view-room').style.display = 'none';
+    document.getElementById('view-table').classList.add('active');
+    document.getElementById('spectate-badge').style.display = '';
+    document.getElementById('timeout-track').style.display = 'none';
+    document.getElementById('rail').classList.remove('show');
+    document.getElementById('lens-media').style.display = 'none';
+    document.getElementById('table-hand').innerHTML = '';
+    await pollSpectate();
+    clearInterval(spectatePoll);
+    spectatePoll = setInterval(pollSpectate, 2500);
+  }
+  async function pollSpectate() {
+    try {
+      const { tables } = await api('GET', '/api/hall/tables');
+      const row = tables.find((t) => t.matchId === spectateId);
+      if (!row) { toast(COPY.tableGone); leaveTable(); return; }
+      document.getElementById('turn-line').textContent = `Watching ${row.seatName || row.seatKind || 'a seat'}`;
+      if (typeof row.playerTotal === 'number') {
+        document.getElementById('table-status').textContent = `${row.seatName || 'Player'} ${row.playerTotal}${row.dealerUpcard ? ' · Dealer showing ' + row.dealerUpcard : ''}`;
+      } else if (row.contenders) {
+        document.getElementById('table-status').textContent = `${row.contenders.A} vs ${row.contenders.B}${row.pick ? ' — picked ' + row.pick : ''}`;
+      }
+    } catch (_) { /* transient poll failure -- try again next tick */ }
   }
 
+  function leaveTable() {
+    matchId = null; activeTable = null; spectateId = null;
+    clearInterval(spectatePoll); clearInterval(lensPollTimer);
+    document.body.classList.remove('in-match', 'in-spectate');
+    document.getElementById('view-table').classList.remove('active');
+    document.getElementById('view-room').style.display = '';
+    document.getElementById('rail').classList.remove('show');
+    refreshRoom();
+  }
   document.getElementById('btn-leave-table').addEventListener('click', leaveTable);
-  document.getElementById('btn-line').addEventListener('click', () => toast('Line chat is coming soon.'));
 
-  renderRoom();
+  // ── HUD: Line + Menu + Add-bot ────────────────────────────────────────────
+  document.getElementById('btn-line').addEventListener('click', () => openSheet('sheet-line'));
+  document.getElementById('line-close').addEventListener('click', closeSheets);
+  document.getElementById('btn-menu').addEventListener('click', () => openSheet('sheet-menu'));
+  document.getElementById('menu-close').addEventListener('click', closeSheets);
+  document.getElementById('menu-profile').addEventListener('click', () => toast('Profile is coming soon.'));
+  document.getElementById('menu-add-bot').addEventListener('click', () => { closeSheets(); openSheet('sheet-addbot'); });
+  document.getElementById('addbot-cancel').addEventListener('click', closeSheets);
+  document.getElementById('addbot-confirm').addEventListener('click', async () => {
+    const kind = document.getElementById('bot-kind').value;
+    const display_name = document.getElementById('bot-name').value || 'Bot';
+    const endpoint = document.getElementById('bot-endpoint').value.trim();
+    if (kind !== 'shaddai' && !endpoint) { toast('That bot kind needs an endpoint URL.'); return; }
+    closeSheets();
+    try {
+      const { seat } = await api('POST', '/api/hall/seats', { kind, display_name, endpoint: endpoint || undefined });
+      // Seat it immediately so it shows up in the room as an occupied chair,
+      // demonstrating the "bot/agent in other chair" state via the real
+      // seat/mailbox pipeline, same as any human seat.
+      await api('POST', '/api/hall/tables', { seatId: seat.id, wager: 0, pack: 'blackjack' });
+      toast(`${display_name} is seated at Blackjack.`);
+      refreshRoom();
+    } catch (e) { toast(e.message || 'Could not seat that bot.'); }
+  });
+
+  // ── deep link: /hall?table=<matchId>&mode=spectate ────────────────────────
+  const params = new URLSearchParams(location.search);
+  const deepTable = params.get('table');
+
+  refreshRoom();
+  clearInterval(roomPoll);
+  roomPoll = setInterval(() => { if (!document.body.classList.contains('in-match') && !document.body.classList.contains('in-spectate')) refreshRoom(); }, 5000);
+
+  if (deepTable) enterSpectate(deepTable);
 })();
 </script>
 </body>

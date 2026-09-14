@@ -106,6 +106,7 @@ async function settleIfDone(match) {
   if (events && events.length) match.lastEvents = events; // Lens button reads this -- see /lens below
   if (score === null || match.sparksApplied) return { score, events }; // not over yet, or already paid
   match.sparksApplied = true;
+  match.settledAt = Date.now(); // room listing keeps a finished match visible briefly -- see GET /api/hall/tables
   if (!sparksConfigured()) return { score, events, sparksSkipped: true };
 
   const seat = seatsStore.getSeat(match.seatId);
@@ -173,6 +174,47 @@ router.post('/api/hall/tables', json, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/hall/tables -- public room listing (Shaddai-Arcade #6 mobile
+ * follow-up). Lets the /hall room show REAL occupied/empty tables (which
+ * pack currently has a live, unsettled match, and who/what is seated) to
+ * ANY caller -- there is no per-viewer auth model in this repo yet, so this
+ * intentionally returns only pack.summary()'s spectator-safe view, never
+ * the full match state (no deck, no dealer hole card pre-reveal, no
+ * pre-settlement bet outcome). A settled match stays listed for a short
+ * grace window (below) so a room visitor can see a chair's result -- e.g. a
+ * bot that just finished a hand -- then drops off. Honest limitation, not a
+ * live-multiplayer feature: a non-human seat's whole hand resolves
+ * synchronously inside the POST /api/hall/tables call that creates it
+ * (hall/mailbox.js's dispatchTurn round-trip runs inline, not in the
+ * background), so no other visitor can ever observe a bot actually
+ * mid-decision -- only before (not yet listed) or after (this grace
+ * window). Real "walk past a table where a bot is visibly still deciding"
+ * needs dispatchTurn to run asynchronously against a persistent table/seat
+ * session -- a real next increment, not built here.
+ */
+const SETTLED_GRACE_MS = 20000;
+router.get('/api/hall/tables', (req, res) => {
+  const tables = [];
+  for (const match of matches.values()) {
+    if (match.state.phase === 'settled' && match.sparksApplied) {
+      if (!match.settledAt || Date.now() - match.settledAt > SETTLED_GRACE_MS) continue;
+    }
+    const pack = PACKS[match.pack];
+    const seat = seatsStore.getSeat(match.seatId);
+    tables.push({
+      matchId: match.id,
+      pack: match.pack,
+      wager: match.wager,
+      seatKind: seat ? seat.kind : null,
+      seatName: seat ? seat.display_name : null,
+      ...(pack.summary ? pack.summary(match.state) : {}),
+    });
+    if (tables.length >= 20) break;
+  }
+  res.json({ ok: true, tables });
+});
+
 router.get('/api/hall/tables/:id', (req, res) => {
   const match = matches.get(req.params.id);
   if (!match) return res.status(404).json({ ok: false, error: 'match not found' });
@@ -238,6 +280,25 @@ router.post('/api/hall/tables/:id/lens', json, async (req, res) => {
     }
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+/**
+ * GET /api/hall/tables/:id/lens/:jobId -- clip status poll (Shaddai-Arcade
+ * #6 mobile follow-up: inline Lens video needs to know when the async Fal
+ * job is done and what its videoUrl is). The browser can never hold
+ * SHADDAI_ADMIN_TOKEN, so this proxies hall/lens-client.js's getClipStatus
+ * the same way POST /lens already proxies requestClip.
+ */
+router.get('/api/hall/tables/:id/lens/:jobId', async (req, res) => {
+  try {
+    if (!sparksConfigured()) {
+      return res.status(503).json({ ok: false, error: 'Lens disabled (Sparks not configured)', code: 'DISABLED' });
+    }
+    const status = await lens.getClipStatus(req.params.jobId);
+    return res.json({ ok: true, ...status });
+  } catch (e) {
+    return res.status(e.status || 502).json({ ok: false, error: e.message, code: e.code });
   }
 });
 

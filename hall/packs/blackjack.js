@@ -183,9 +183,29 @@ function resolve(state) {
   return { score: next.result, nextState: next, events };
 }
 
+/**
+ * summary(state) -> a spectator-safe public view (Shaddai-Arcade #6 mobile
+ * follow-up, GET /api/hall/tables room listing). Deliberately narrower than
+ * `state` itself: never exposes the deck, and never exposes the dealer's
+ * hole card before it's actually revealed (dealer-turn/settled), matching
+ * real blackjack table etiquette even though `state` itself already holds
+ * both dealer cards from the deal -- this is the one place that matters,
+ * since it's the only view a non-participant (a room onlooker) ever sees.
+ */
+function summary(state) {
+  const s = { phase: state.phase };
+  if (state.player) s.playerTotal = handValue(state.player.cards);
+  if (state.dealer && state.dealer[0]) {
+    s.dealerUpcard = `${state.dealer[0].r}${state.dealer[0].s}`;
+  }
+  if (state.phase === 'settled' && state.dealer) s.dealerTotal = handValue(state.dealer);
+  if (state.result) s.result = state.result;
+  return s;
+}
+
 module.exports = {
   // exported for tests / reuse; not part of the public pack contract itself
   newShuffledDeck, handValue, isBlackjack,
   // the pack contract
-  startMatch, getButtons, applyMove, resolve,
+  startMatch, getButtons, applyMove, resolve, summary,
 };

@@ -60,4 +60,30 @@ async function requestClip(userId, event, idempotencyKey) {
   }
 }
 
-module.exports = { requestClip };
+/**
+ * getClipStatus(jobId) -> { status, progress, videoUrl, error }
+ * Thin passthrough to GET /api/lens/clip/:jobId (backend/lens-routes.js),
+ * which itself passes through to the fal adapter's own getStatus() --
+ * videoUrl is null until the provider job finishes. Added for the mobile
+ * Hall's inline Lens playback (issue #6 follow-up): the browser client
+ * can't hold SHADDAI_ADMIN_TOKEN, so hall/routes.js proxies this the same
+ * way it already proxies requestClip.
+ */
+async function getClipStatus(jobId) {
+  try {
+    const res = await axios.get(`${baseUrl()}/api/lens/clip/${encodeURIComponent(jobId)}`, {
+      headers: adminHeaders(), timeout: 15000,
+    });
+    return res.data;
+  } catch (e) {
+    if (e.response && e.response.data) {
+      const err = new Error(e.response.data.error || 'lens clip status request failed');
+      err.status = e.response.status;
+      err.code = e.response.data.code;
+      throw err;
+    }
+    throw e;
+  }
+}
+
+module.exports = { requestClip, getClipStatus };

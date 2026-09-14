@@ -83,7 +83,24 @@ function makeSkillplayBetPack(key, { game, label, contenderA, contenderB }) {
     return { score: result, nextState: next, events };
   }
 
-  return { key, game, label, startMatch, getButtons, applyMove, resolve };
+  /**
+   * summary(state) -> spectator-safe public view. Critically excludes
+   * `winner`/`scores` while phase is 'pick' or 'resolving' -- both are
+   * already decided in state at startMatch time (see the comment above),
+   * so leaking either before settlement would let a room onlooker read the
+   * outcome off the wire before the seat that's betting even picks a side.
+   */
+  function summary(state) {
+    const s = { phase: state.phase, contenders: state.contenders, pick: state.pick, label };
+    if (state.phase === 'settled') {
+      s.winner = state.winner;
+      s.result = state.result;
+      s.scores = state.scores;
+    }
+    return s;
+  }
+
+  return { key, game, label, startMatch, getButtons, applyMove, resolve, summary };
 }
 
 module.exports = { makeSkillplayBetPack };
