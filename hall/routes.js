@@ -27,12 +27,13 @@ const router = express.Router();
 const json = express.json();
 
 const seatsStore = require('./seats');
-const blackjack = require('./packs/blackjack');
 const mailbox = require('./mailbox');
 const economy = require('./economy-client');
 const lens = require('./lens-client');
 
-const PACKS = { blackjack };
+// Shaddai-Arcade issue #10: pack registry, no longer hardcoded to blackjack.
+// hall/packs/index.js documents each pack's key -> module.
+const PACKS = require('./packs');
 const matches = new Map(); // matchId -> { pack, seatId, state, sparksApplied }
 
 function newMatchId() {
@@ -115,16 +116,16 @@ async function settleIfDone(match) {
       const pot = match.wager * 2;
       const rake = Math.floor((pot * RAKE_BPS) / 10000);
       const payout = pot - rake;
-      await economy.grant(sparksRef, payout, `hall:bj_win:${score}`, `${match.id}:payout`);
+      await economy.grant(sparksRef, payout, `hall:${match.pack}_win:${score}`, `${match.id}:payout`);
       if (rake > 0) {
         // Best-effort: a rake-credit failure must never undo or block the
         // player's own payout above, which has already succeeded.
         try {
-          await economy.grant(HOUSE_ACCOUNT, rake, 'hall:bj_rake', `${match.id}:rake`);
+          await economy.grant(HOUSE_ACCOUNT, rake, `hall:${match.pack}_rake`, `${match.id}:rake`);
         } catch (e) { /* house accounting gap, not a player-facing failure -- swallow */ }
       }
     } else if (score === 'push') {
-      await economy.grant(sparksRef, match.wager, 'hall:bj_push_refund', `${match.id}:refund`);
+      await economy.grant(sparksRef, match.wager, `hall:${match.pack}_push_refund`, `${match.id}:refund`);
     }
     // 'lose' / 'bust': buy-in already spent at table creation, no further movement.
   } catch (e) {
@@ -135,22 +136,29 @@ async function settleIfDone(match) {
 
 router.post('/api/hall/tables', json, async (req, res) => {
   try {
-    const { seatId, wager } = req.body || {};
+    const { seatId, wager, pack: packKey } = req.body || {};
     const seat = seatsStore.getSeat(seatId);
     if (!seat) return res.status(404).json({ ok: false, error: 'seat not found' });
     const amount = Number(wager) || 0;
 
+    const pack = PACKS[packKey || 'blackjack'];
+    if (!pack) {
+      return res.status(400).json({ ok: false, error: `unknown pack '${packKey}' (valid: ${Object.keys(PACKS).join(', ')})` });
+    }
+
     if (amount > 0 && sparksConfigured() && seat.sparks_ref) {
       try {
-        await economy.spend(seat.sparks_ref, amount, 'hall:bj_buyin', `${seatId}:${Date.now()}`);
+        await economy.spend(seat.sparks_ref, amount, `hall:${pack.key || 'bj'}_buyin`, `${seatId}:${Date.now()}`);
       } catch (e) {
         return res.status(e.status || 502).json({ ok: false, error: e.message });
       }
     }
 
-    const pack = blackjack;
-    let state = pack.startMatch([seatId], amount);
-    const match = { id: newMatchId(), pack: 'blackjack', seatId, wager: amount, state, sparksApplied: false };
+    // await, not a bare call: skillplay-bet packs' startMatch is async (it
+    // resolves the contest via a cross-service call before play begins);
+    // blackjack's startMatch is sync and awaiting a non-promise is a no-op.
+    let state = await pack.startMatch([seatId], amount);
+    const match = { id: newMatchId(), pack: pack.key || 'blackjack', seatId, wager: amount, state, sparksApplied: false };
     matches.set(match.id, match);
 
     await driveToHumanOrEnd(match);
