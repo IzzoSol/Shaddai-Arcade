@@ -19,6 +19,11 @@ app.use(express.static(pathMod.join(__dirname)));
 try { app.use(require('./hall/routes')); console.log('[hall] platform routes mounted'); }
 catch (e) { console.warn('[hall] platform routes failed to mount:', e.message); }
 
+// SKATE solo-vs-house practice mode -- see hall/skate-demo-routes.js for why
+// this is separate from hall/routes.js (no real seat matchmaking exists yet).
+try { app.use(require('./hall/skate-demo-routes')); console.log('[skate-demo] practice routes mounted'); }
+catch (e) { console.warn('[skate-demo] practice routes failed to mount:', e.message); }
+
 // ── persistence: password saves + leaderboard (JSON files) ──
 // On Render, mount a persistent disk and set DATA_DIR=/var/data so saves +
 // the leaderboard survive redeploys (the default filesystem is ephemeral).

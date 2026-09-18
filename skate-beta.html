@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>SHADDAI Arcade · SKATE (beta)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#0a0612; --panel:#150d24; --ink:#f0eaff; --ink-soft:#a898c4; --ink-faint:#6b5c8a;
+  --edge:rgba(200,150,255,.18); --edge2:rgba(200,150,255,.35);
+  --magenta:#ff2fb0; --cyan:#29e8ff; --lime:#9dff29; --gold:#ffd23d; --violet:#8b2fff;
+  --f-display:'Cinzel',serif; --f-mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+*{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; height:100%; }
+body{ background:radial-gradient(ellipse at 50% -10%, #2a1240 0%, var(--bg) 60%); color:var(--ink);
+  font-family:var(--f-mono); min-height:100vh; overflow-x:hidden; }
+.screen{ display:none; min-height:100vh; flex-direction:column; align-items:center; padding:5vh 5vw; }
+.screen.active{ display:flex; }
+
+/* ── INTRO ── */
+#intro{ justify-content:center; text-align:center; gap:22px; }
+#intro h1{ font-family:var(--f-display); font-weight:900; font-size:clamp(38px,9vw,86px);
+  margin:0; letter-spacing:.03em; background:linear-gradient(135deg,var(--magenta),var(--cyan),var(--lime));
+  -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow:0 0 60px rgba(255,47,176,.35); }
+#intro .sub{ color:var(--ink-soft); font-size:14px; letter-spacing:.12em; text-transform:uppercase; }
+#intro button{ margin-top:18px; font-family:var(--f-display); font-weight:900; font-size:18px; letter-spacing:.08em;
+  padding:16px 48px; background:linear-gradient(135deg,var(--magenta),var(--violet)); color:#fff; border:none;
+  border-radius:4px; cursor:pointer; text-transform:uppercase; box-shadow:0 0 40px rgba(255,47,176,.4); }
+#intro button:hover{ filter:brightness(1.15); }
+#intro .credit{ position:absolute; bottom:18px; font-size:10px; color:var(--ink-faint); letter-spacing:.1em; }
+
+/* ── CHARACTER SELECT ── */
+#select h2{ font-family:var(--f-display); font-size:clamp(22px,4vw,32px); margin:0 0 6px; text-align:center; }
+#select .sub{ color:var(--ink-soft); font-size:13px; margin-bottom:28px; text-align:center; }
+.roster{ display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:14px; max-width:820px; width:100%; }
+.rider{ background:var(--panel); border:1px solid var(--edge); border-radius:10px; padding:14px 10px; text-align:center;
+  cursor:pointer; transition:border-color .15s,transform .1s; }
+.rider:hover{ border-color:var(--cyan); transform:translateY(-3px); }
+.rider.sel{ border-color:var(--lime); box-shadow:0 0 24px rgba(157,255,41,.25); }
+.rider img{ width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:8px; margin-bottom:8px; background:#000; }
+.rider .name{ font-family:var(--f-display); font-size:13px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
+#select button.go{ margin-top:30px; font-family:var(--f-display); font-weight:900; font-size:16px; letter-spacing:.06em;
+  padding:14px 40px; background:var(--lime); color:#0a1200; border:none; border-radius:4px; cursor:pointer;
+  text-transform:uppercase; }
+#select button.go:disabled{ opacity:.3; cursor:not-allowed; }
+
+/* ── BOARD (gameplay) ── */
+#board{ justify-content:flex-start; padding-top:3vh; }
+.hud{ display:flex; justify-content:space-between; align-items:center; width:100%; max-width:760px; margin-bottom:18px; }
+.hud .rider-tag{ display:flex; align-items:center; gap:10px; }
+.hud .rider-tag img{ width:38px; height:38px; border-radius:50%; border:2px solid var(--edge2); object-fit:cover; }
+.hud .letters{ font-family:var(--f-display); font-size:22px; font-weight:900; letter-spacing:.15em; }
+.hud .letters .got{ color:var(--magenta); }
+.hud .letters .rest{ color:var(--ink-faint); }
+.spot-name{ font-family:var(--f-display); font-size:clamp(20px,3.4vw,28px); text-align:center; margin:6px 0 4px; }
+.spot-sub{ color:var(--ink-soft); font-size:12px; text-align:center; margin-bottom:22px; letter-spacing:.06em; text-transform:uppercase; }
+
+.trick-log{ width:100%; max-width:760px; min-height:70px; margin-bottom:20px; display:flex; flex-direction:column; gap:6px; }
+.trick-log .row{ display:flex; justify-content:space-between; padding:8px 14px; border-radius:6px; font-size:13px;
+  background:var(--panel); border:1px solid var(--edge); animation:slidein .3s ease-out; }
+.trick-log .row.land{ border-color:rgba(157,255,41,.4); }
+.trick-log .row.bail{ border-color:rgba(255,47,176,.4); }
+@keyframes slidein{ from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:none} }
+
+.buttons{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; max-width:760px; width:100%; }
+.buttons button{ font-family:var(--f-display); font-weight:700; font-size:15px; padding:20px 14px; background:var(--panel);
+  border:1px solid var(--edge2); color:var(--ink); border-radius:8px; cursor:pointer; letter-spacing:.03em; }
+.buttons button:hover{ border-color:var(--gold); background:rgba(255,210,61,.08); }
+.buttons button:disabled{ opacity:.4; cursor:wait; }
+
+#result{ margin-top:26px; text-align:center; }
+#result h2{ font-family:var(--f-display); font-size:clamp(28px,5vw,42px); margin:0 0 10px; }
+#result.win h2{ color:var(--lime); } #result.lose h2{ color:var(--magenta); } #result.push h2{ color:var(--gold); }
+#result button{ margin-top:16px; font-family:var(--f-mono); font-size:13px; padding:12px 28px; background:none;
+  border:1px solid var(--edge2); color:var(--ink); border-radius:4px; cursor:pointer; }
+[hidden]{ display:none!important; }
+</style>
+</head>
+<body>
+
+<!-- ── INTRO ── -->
+<section id="intro" class="screen active">
+  <h1>S · K · A · T · E</h1>
+  <div class="sub">A SHADDAI Arcade Hall table &mdash; land your trick, or spell it out</div>
+  <button id="btnPlay">Enter the Hall</button>
+  <div class="credit">beta build &middot; solo vs. house &middot; no Sparks wagered</div>
+</section>
+
+<!-- ── CHARACTER SELECT ── -->
+<section id="select" class="screen">
+  <h2>Pick your rider</h2>
+  <div class="sub">Cosmetic only in this beta &mdash; every rider plays identically</div>
+  <div class="roster" id="roster"></div>
+  <button class="go" id="btnEnterBoard" disabled>Drop In</button>
+</section>
+
+<!-- ── BOARD ── -->
+<section id="board" class="screen">
+  <div class="hud">
+    <div class="rider-tag"><img id="hudRiderImg" src="" alt=""><span id="hudRiderName"></span></div>
+    <div class="letters" id="hudLetters">&nbsp;</div>
+  </div>
+  <div class="spot-name" id="spotName">&mdash;</div>
+  <div class="spot-sub" id="spotSub">&nbsp;</div>
+  <div class="trick-log" id="trickLog"></div>
+  <div class="buttons" id="buttons"></div>
+  <div id="result" hidden>
+    <h2 id="resultTitle"></h2>
+    <p id="resultSub" style="color:var(--ink-soft);font-size:13px;"></p>
+    <button id="btnAgain">Run it back</button>
+  </div>
+</section>
+
+<script>
+const RIDERS = [
+  { id: 'nova', name: 'Nova', img: 'assets/companions/nova.png' },
+  { id: 'reign', name: 'Reign', img: 'assets/companions/reign.png' },
+  { id: 'jade', name: 'Jade', img: 'assets/companions/jade.png' },
+  { id: 'soleil', name: 'Soleil', img: 'assets/companions/soleil.png' },
+  { id: 'cassidy', name: 'Cassidy', img: 'assets/companions/cassidy.png' },
+  { id: 'fattony', name: 'Fat Tony', img: 'assets/companions/fattony.png' },
+];
+
+let picked = null;
+let matchId = null;
+let playerId = 'guest_' + Math.random().toString(36).slice(2, 8);
+
+function show(id) {
+  document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ── Intro ──
+document.getElementById('btnPlay').addEventListener('click', () => show('select'));
+
+// ── Character select ──
+const rosterEl = document.getElementById('roster');
+RIDERS.forEach((r) => {
+  const card = document.createElement('div');
+  card.className = 'rider';
+  card.innerHTML = `<img src="${r.img}" alt="${r.name}"><div class="name">${r.name}</div>`;
+  card.addEventListener('click', () => {
+    picked = r;
+    document.querySelectorAll('.rider').forEach((el) => el.classList.remove('sel'));
+    card.classList.add('sel');
+    document.getElementById('btnEnterBoard').disabled = false;
+  });
+  rosterEl.appendChild(card);
+});
+
+document.getElementById('btnEnterBoard').addEventListener('click', async () => {
+  document.getElementById('hudRiderImg').src = picked.img;
+  document.getElementById('hudRiderName').textContent = picked.name;
+  show('board');
+  await startMatch();
+});
+
+// ── Board / gameplay ──
+async function startMatch() {
+  document.getElementById('result').hidden = true;
+  document.getElementById('trickLog').innerHTML = '';
+  const r = await fetch('/api/skate-demo/start', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId }),
+  }).then((res) => res.json());
+  if (!r.ok) { alert('Could not start match: ' + r.error); return; }
+  matchId = r.matchId;
+  render(r);
+}
+
+function logRow(seat, ev) {
+  const row = document.createElement('div');
+  row.className = 'row ' + ev;
+  const who = seat === picked.id || seat === playerId ? picked.name : 'House';
+  row.innerHTML = `<span>${who}</span><span>${ev === 'land' ? '✓ LANDED' : '✗ BAILED'}</span>`;
+  const log = document.getElementById('trickLog');
+  log.prepend(row);
+  while (log.children.length > 5) log.removeChild(log.lastChild);
+}
+
+function render(r) {
+  document.getElementById('spotName').textContent = r.summary.spot || '—';
+  document.getElementById('spotSub').textContent = r.summary.setterSeat === playerId ? "You're setting" : "House is setting — you follow";
+
+  const mine = r.summary.letters[playerId] || [];
+  const houseLetters = Object.keys(r.summary.letters).find((k) => k !== playerId);
+  const theirs = (houseLetters && r.summary.letters[houseLetters]) || [];
+  document.getElementById('hudLetters').innerHTML =
+    'YOU ' + spellOut(mine) + '&nbsp;&nbsp;&nbsp;HOUSE ' + spellOut(theirs);
+
+  (r.events || []).forEach((e) => (e.events || []).forEach((ev) => logRow(e.seat, ev)));
+
+  const buttonsEl = document.getElementById('buttons');
+  buttonsEl.innerHTML = '';
+  if (r.settled) {
+    document.getElementById('result').hidden = false;
+    document.getElementById('result').className = r.result === 'win' ? 'win' : r.result === 'lose' ? 'lose' : 'push';
+    document.getElementById('resultTitle').textContent =
+      r.result === 'win' ? 'YOU WIN' : r.result === 'lose' ? 'YOU GOT SKATE’D' : 'PUSH';
+    document.getElementById('resultSub').textContent = 'YOU ' + spellOut(mine, true) + ' · HOUSE ' + spellOut(theirs, true);
+    return;
+  }
+  if (!r.yourTurn) {
+    const waiting = document.createElement('div');
+    waiting.style.cssText = 'color:var(--ink-soft);grid-column:1/-1;text-align:center;padding:20px;';
+    waiting.textContent = 'House is riding…';
+    buttonsEl.appendChild(waiting);
+    return;
+  }
+  r.legal.forEach((btn) => {
+    const el = document.createElement('button');
+    el.textContent = btn.label;
+    el.addEventListener('click', () => submitMove(btn.id));
+    buttonsEl.appendChild(el);
+  });
+}
+
+function spellOut(letters, plain) {
+  const word = 'SKATE';
+  const out = word.split('').map((ch, i) => (i < letters.length ? ch : (plain ? '_' : '<span class="rest">' + ch + '</span>')));
+  if (plain) return out.join('');
+  return letters.length ? '<span class="got">' + letters.join('') + '</span>' + out.slice(letters.length).join('') : out.join('');
+}
+
+async function submitMove(moveId) {
+  document.querySelectorAll('.buttons button').forEach((b) => (b.disabled = true));
+  const r = await fetch('/api/skate-demo/move', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ matchId, moveId }),
+  }).then((res) => res.json());
+  if (!r.ok) { alert('Move failed: ' + r.error); return; }
+  render(r);
+}
+
+document.getElementById('btnAgain').addEventListener('click', startMatch);
+</script>
+</body>
+</html>
