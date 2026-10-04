@@ -35,10 +35,17 @@ function adminHeaders() {
   return { 'x-admin-token': token, 'Content-Type': 'application/json' };
 }
 
-/** getBalance(userId) -> integer Sparks balance */
+/** getBalance(userId) -> integer Sparks balance
+ *  Sends the scoped service token: as of the main backend's shared-'local'-wallet
+ *  fix, GET /balance only honours a caller-named userId when the caller is
+ *  authenticated or holds a service token. Without the header this 401s
+ *  (previously it silently read the backend's shared 'local' bucket instead of
+ *  the requested user's balance, so buy-in checks were reading the wrong
+ *  wallet).
+ */
 async function getBalance(userId) {
   const res = await axios.get(`${baseUrl()}/api/economy/balance`, {
-    params: { userId }, timeout: 8000,
+    params: { userId }, headers: adminHeaders(), timeout: 8000,
   });
   return res.data && res.data.sparks_balance;
 }
