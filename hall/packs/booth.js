@@ -79,13 +79,19 @@ function startMatch(seats, wager) {
   }
   const characters = { [seats[0]]: CHARACTERS.player, [seats[1]]: CHARACTERS.gunner };
 
-  // One compose call per seat; the seat's own seed opener is the opponent's
-  // character line, so the writer is always answering a specific line.
-  return Promise.all(seats.map((seat) => writerClient.composeBards({
-    strategies: RAIL,
-    count: BARS_PER_STRATEGY,
-    opponentLine: characters[seat === seats[0] ? seats[1] : seats[0]],
-  }).then(({ bars, source, truncated }) => ({ seat, bars, source, truncated }))))
+  // One compose call per seat. Each seat answers the OTHER seat's seed opener,
+  // so the writer is always responding to a specific line. Note this must be
+  // SEED_OPENERS[...], not characters[...] -- passing the character name gave
+  // the writer "Gunner" to rebut instead of an actual line.
+  return Promise.all(seats.map((seat) => {
+    const opponentSeatId = seat === seats[0] ? seats[1] : seats[0];
+    const opponentLine = SEED_OPENERS[characters[opponentSeatId]];
+    return writerClient.composeBards({
+      strategies: RAIL,
+      count: BARS_PER_STRATEGY,
+      opponentLine,
+    }).then(({ bars, source, truncated }) => ({ seat, bars, source, truncated }));
+  }))
     .then((results) => {
       const state = {
         pack: 'booth',

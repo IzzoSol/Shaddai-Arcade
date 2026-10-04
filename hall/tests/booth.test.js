@@ -196,7 +196,48 @@ async function main() {
     console.log('PASS: booth summary() hides bars/result but discloses content source');
   }
 
-  console.log('\n13/13 booth generative-pack tests passed');
+  // 14. startMatch hands the writer the opponent's opener LINE, not their name.
+  // Regression: it used to pass `characters[...]` -- the literal strings
+  // "Gunner" / "Player (red beanie)" -- as opponentLine, so the writer was
+  // asked to rebut a name rather than an actual bar, while the docs and the
+  // code comment both claimed it was answering a specific line.
+  {
+    const real = writer.composeBards;
+    const seen = [];
+    writer.composeBards = (opts) => {
+      seen.push(opts);
+      return Promise.resolve({
+        source: 'test',
+        truncated: false,
+        bars: [
+          { strategy: 'punch', text: 'a', content: 5, cadence: 5, rebound: 5 },
+          { strategy: 'flip', text: 'b', content: 5, cadence: 5, rebound: 5 },
+          { strategy: 'story', text: 'c', content: 5, cadence: 5, rebound: 5 },
+        ],
+      });
+    };
+    try {
+      await booth.startMatch(['carol', 'dave'], 10);
+
+      assert.strictEqual(seen.length, 2, 'one compose call per seat');
+      const NAMES = ['Player (red beanie)', 'Gunner'];
+      for (const opts of seen) {
+        assert.strictEqual(typeof opts.opponentLine, 'string');
+        assert.ok(opts.opponentLine.length > 20,
+          `opponentLine must be a real sentence, got ${JSON.stringify(opts.opponentLine)}`);
+        assert.ok(!NAMES.includes(opts.opponentLine),
+          `opponentLine must not be a bare character name, got ${JSON.stringify(opts.opponentLine)}`);
+      }
+      // Each seat answers the OTHER seat's opener, so the two lines differ.
+      assert.notStrictEqual(seen[0].opponentLine, seen[1].opponentLine,
+        'each seat must answer a different opponent line');
+      console.log('PASS: startMatch gives the writer the opponent\'s opener line, not their name');
+    } finally {
+      writer.composeBards = real;
+    }
+  }
+
+  console.log('\n14/14 booth generative-pack tests passed');
 }
 
 main().catch((e) => { console.error('FAIL:', e && e.message); process.exit(1); });

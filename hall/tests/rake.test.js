@@ -80,18 +80,24 @@ async function run() {
   const seatId = seatRes.body.seat.id;
 
   stub._grants.length = 0;
-  const { settlement } = await playUntilWinOrBlackjack(request, seatId);
+  const { matchId, settlement } = await playUntilWinOrBlackjack(request, seatId);
 
   const pot = 25 * 2; // wager 25, doubled on a win
   const expectedRake = Math.floor((pot * 400) / 10000); // 4% of 50 = 2
   const expectedPayout = pot - expectedRake; // 48
 
-  const playerGrant = stub._grants.find((g) => g.userId === 'u1');
-  const houseGrant = stub._grants.find((g) => g.userId === 'house:hall');
+  // Scope to THIS match. playUntilWinOrBlackjack may play several losing hands
+  // first, and those accumulate their own grants -- matching on userId alone
+  // returned whichever grant happened to come first, so this test passed or
+  // failed depending on how many attempts a win took.
+  const playerGrant = stub._grants.find(
+    (g) => g.userId === 'u1' && String(g.idempotencyKey || '') === `${matchId}:payout`);
+  const houseGrant = stub._grants.find(
+    (g) => g.userId === 'house:hall' && String(g.idempotencyKey || '') === `${matchId}:rake`);
 
-  assert.ok(playerGrant, 'expected a grant call to the player');
+  assert.ok(playerGrant, `expected a payout grant to the player; saw ${JSON.stringify(stub._grants)}`);
+  assert.ok(houseGrant, `expected a rake grant to house:hall; saw ${JSON.stringify(stub._grants)}`);
   assert.strictEqual(playerGrant.amount, expectedPayout, `expected player payout ${expectedPayout}, got ${playerGrant.amount}`);
-  assert.ok(houseGrant, 'expected a separate grant call to house:hall');
   assert.strictEqual(houseGrant.amount, expectedRake, `expected house rake ${expectedRake}, got ${houseGrant.amount}`);
   assert.strictEqual(playerGrant.amount + houseGrant.amount, pot, 'payout + rake must equal the full pot -- no Sparks created or destroyed');
   console.log(`PASS: a ${settlement.score} on a 25-wager hand pays ${playerGrant.amount} to the player and ${houseGrant.amount} to house:hall (pot=${pot})`);
