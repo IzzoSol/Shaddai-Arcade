@@ -1,11 +1,12 @@
 {
-  "name": "neon-blackjack",
+  "name": "shaddai-arcade",
   "version": "1.0.0",
-  "description": "Neon Blackjack Casino with Solana x402 payments and AI agents",
+  "description": "SHADDAI Arcade - The Hall: one room where humans, Shaddai agents and external bots sit at the same tables. Seat + move-mailbox protocol, Sparks economy, optional LENS camera.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test": "node hall/tests/run-all.js"
   },
   "dependencies": {
     "@solana/web3.js": "^1.87.6",

@@ -14,6 +14,9 @@
 
 const blackjack = require('./blackjack');
 const skate = require('./skate');
+const football = require('./football');
+const soccer = require('./soccer');
+const booth = require('./booth');
 const { makeSkillplayBetPack } = require('./skillplay-bet');
 
 // Council-vs-council exhibition pairings for phase-1 -- arbitrary but fixed,
@@ -33,4 +36,7 @@ const starfall_bet = makeSkillplayBetPack('starfall_bet', {
   game: 'shooting', label: 'Starfall', contenderA: 'SHADDAI', contenderB: 'NEXUS',
 });
 
-module.exports = { blackjack, skate, hoops_bet, gridiron_bet, dodgeball_bet, starfall_bet };
+module.exports = {
+  blackjack, skate, football, soccer, booth,
+  hoops_bet, gridiron_bet, dodgeball_bet, starfall_bet,
+};
